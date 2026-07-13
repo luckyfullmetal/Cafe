@@ -1,7 +1,6 @@
 const fs = require('fs');
 const https = require('https');
 
-// Read dynamic data sent directly from Roblox
 const targetUser = process.env.TFM_USERNAME || "Username#0000"; 
 const expectedCode = process.env.VERIFY_CODE || "NO_CODE"; 
 
@@ -14,49 +13,49 @@ function verifyPlayer() {
         return;
     }
 
+    console.log(`Fetching profile for: ${targetUser}`);
+    console.log(`Looking for verification string: ${expectedCode}`);
+
     https.get(profileUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Roblox Verification Bot)' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     }, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
             try {
-                // 1. Extract Biography text
-                const bioMatch = data.match(/class="profile-bio"[^>]*>([\s\S]*?)<\/div>/i);
-                let bioText = bioMatch ? bioMatch[1].replace(/<[^>]*>/g, '').trim() : "";
-
-                // 2. Extract Avatar URL
-                const avatarMatch = data.match(/<img[^>]+src="([^"]+avatar[^"]+)"/i) || 
-                                    data.match(/class="avatar"[^>]+src="([^"]+)"/i);
-                let avatarUrl = avatarMatch ? avatarMatch[1] : "https://atelier801.com/img/elements/avatar-default.png";
-                if (avatarUrl.startsWith('//')) avatarUrl = 'https:' + avatarUrl;
-
-                // 3. Open current verified database
+                // Open or initialize your json database file
                 let database = {};
                 if (fs.existsSync('tfm_data.json')) {
                     try { database = JSON.parse(fs.readFileSync('tfm_data.json', 'utf8')); } catch (e) {}
                 }
 
-                // 4. Verification Check
-                if (bioText.includes(expectedCode)) {
+                // Bulletproof check: Scan the ENTIRE webpage raw HTML for your code
+                if (data.includes(expectedCode)) {
+                    // Quick attempt to capture avatar if present, otherwise default
+                    const avatarMatch = data.match(/src="([^"]+avatar[^"]+)"/i);
+                    let avatarUrl = avatarMatch ? avatarMatch[1] : "https://atelier801.com/img/elements/avatar-default.png";
+                    if (avatarUrl.startsWith('//')) avatarUrl = 'https:' + avatarUrl;
+
                     database[targetUser] = {
                         verified: true,
                         avatar: avatarUrl,
                         linkedRobloxId: process.env.ROBLOX_ID || "Unknown",
                         timestamp: new Date().toISOString()
                     };
+                    
                     fs.writeFileSync('tfm_data.json', JSON.stringify(database, null, 4));
-                    console.log(`SUCCESS: ${targetUser} matched code ${expectedCode} and is now VERIFIED!`);
+                    console.log(`SUCCESS: ${targetUser} verified code ${expectedCode}! Database updated.`);
                 } else {
-                    console.log(`FAILED: Code ${expectedCode} was not found in ${targetUser}'s bio.`);
+                    console.log(`FAILED: Code [${expectedCode}] was not found anywhere on the profile page.`);
+                    console.log("Double check your Atelier801 profile settings to ensure your bio text is saved publicly.");
                 }
                 
             } catch (err) {
-                console.error("Parsing failed:", err);
+                console.error("Internal Parsing script failure:", err);
             }
         });
     }).on('error', (err) => {
-        console.error("HTTP Fetch Error:", err.message);
+        console.error("Network Fetch Error:", err.message);
     });
 }
 

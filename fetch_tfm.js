@@ -14,7 +14,6 @@ function verifyPlayer() {
     }
 
     console.log(`Fetching profile for: ${targetUser}`);
-    console.log(`Looking for verification string: ${expectedCode}`);
 
     https.get(profileUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
@@ -23,31 +22,39 @@ function verifyPlayer() {
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
             try {
-                // Open or initialize your json database file
                 let database = {};
                 if (fs.existsSync('tfm_data.json')) {
                     try { database = JSON.parse(fs.readFileSync('tfm_data.json', 'utf8')); } catch (e) {}
                 }
 
-                // Bulletproof check: Scan the ENTIRE webpage raw HTML for your code
-                if (data.includes(expectedCode)) {
-                    // Quick attempt to capture avatar if present, otherwise default
-                    const avatarMatch = data.match(/src="([^"]+avatar[^"]+)"/i);
-                    let avatarUrl = avatarMatch ? avatarMatch[1] : "https://atelier801.com/img/elements/avatar-default.png";
-                    if (avatarUrl.startsWith('//')) avatarUrl = 'https:' + avatarUrl;
+                // 1. STRICT CAFEID CHECK: Must look exactly like "CAFEID: TFM-VERIFY-XXXXXX"
+                const idRegex = new RegExp(`CAFEID:\\s*${expectedCode}`, 'i');
+                
+                if (idRegex.test(data)) {
+                    console.log(`SUCCESS: Found strict matching CAFEID for ${expectedCode}`);
+                    
+                    // 2. STRICT CAFEPFP CHECK: Must look exactly like "CAFEPFP: https://..."
+                    const pfpRegex = /CAFEPFP:\s*(https?:\/\/[^\s<]+?\.(?:png|jpg|jpeg))/i;
+                    const match = data.match(pfpRegex);
+                    
+                    let finalAvatarUrl = "";
+                    if (match && match[1]) {
+                        finalAvatarUrl = match[1];
+                        console.log(`Found strict matching CAFEPFP: ${finalAvatarUrl}`);
+                    } else {
+                        console.log("STRICT REJECTION: CAFEPFP tag or link format missing.");
+                    }
 
                     database[targetUser] = {
                         verified: true,
-                        avatar: avatarUrl,
+                        avatar: finalAvatarUrl, 
                         linkedRobloxId: process.env.ROBLOX_ID || "Unknown",
                         timestamp: new Date().toISOString()
                     };
                     
                     fs.writeFileSync('tfm_data.json', JSON.stringify(database, null, 4));
-                    console.log(`SUCCESS: ${targetUser} verified code ${expectedCode}! Database updated.`);
                 } else {
-                    console.log(`FAILED: Code [${expectedCode}] was not found anywhere on the profile page.`);
-                    console.log("Double check your Atelier801 profile settings to ensure your bio text is saved publicly.");
+                    console.log(`FAILED: Bio does not contain the strict pattern "CAFEID: ${expectedCode}"`);
                 }
                 
             } catch (err) {

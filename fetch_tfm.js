@@ -27,22 +27,25 @@ function verifyPlayer() {
                     try { database = JSON.parse(fs.readFileSync('tfm_data.json', 'utf8')); } catch (e) {}
                 }
 
-                // 1. STRICT CAFEID CHECK: Must look exactly like "CAFEID: TFM-VERIFY-XXXXXX"
-                const idRegex = new RegExp(`CAFEID:\\s*${expectedCode}`, 'i');
+                // 🛠️ CRITICAL FIX: Convert HTML line breaks to spaces and strip all other HTML tags
+                const cleanText = data.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '');
+
+                // Strict validation checks on completely raw text strings
+                const hasStrictID = cleanText.includes(`CAFEID: ${expectedCode}`) || cleanText.includes(`CAFEID:${expectedCode}`);
                 
-                if (idRegex.test(data)) {
-                    console.log(`SUCCESS: Found strict matching CAFEID for ${expectedCode}`);
+                if (hasStrictID) {
+                    console.log(`SUCCESS: Found matching strict CAFEID pattern!`);
                     
-                    // 2. STRICT CAFEPFP CHECK: Must look exactly like "CAFEPFP: https://..."
-                    const pfpRegex = /CAFEPFP:\s*(https?:\/\/[^\s<]+?\.(?:png|jpg|jpeg))/i;
-                    const match = data.match(pfpRegex);
+                    // Look for CAFEPFP: followed by the link anywhere in the clean text
+                    const pfpRegex = /CAFEPFP:\s*(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg))/i;
+                    const match = cleanText.match(pfpRegex);
                     
                     let finalAvatarUrl = "";
                     if (match && match[1]) {
                         finalAvatarUrl = match[1];
                         console.log(`Found strict matching CAFEPFP: ${finalAvatarUrl}`);
                     } else {
-                        console.log("STRICT REJECTION: CAFEPFP tag or link format missing.");
+                        console.log("CAFEPFP tag found, but link layout is invalid.");
                     }
 
                     database[targetUser] = {
@@ -53,8 +56,9 @@ function verifyPlayer() {
                     };
                     
                     fs.writeFileSync('tfm_data.json', JSON.stringify(database, null, 4));
+                    console.log("Database written completely.");
                 } else {
-                    console.log(`FAILED: Bio does not contain the strict pattern "CAFEID: ${expectedCode}"`);
+                    console.log(`FAILED: Raw text bio did not strictly match "CAFEID: ${expectedCode}"`);
                 }
                 
             } catch (err) {
